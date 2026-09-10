@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-Script interativo para obter o GOOGLE_ANALYTICS_REFRESH_TOKEN via OAuth2.
+Interactive script to obtain the GOOGLE_ANALYTICS_REFRESH_TOKEN via OAuth2.
 
-Pré-requisitos:
-  1. Projeto criado no Google Cloud Console com a "Google Analytics Data API" habilitada
-  2. Credenciais OAuth2 (Client ID e Client Secret) do tipo "Desktop app"
-  3. Sua conta Google com acesso à propriedade GA4
+Prerequisites:
+  1. Google Cloud project with the "Google Analytics Data API" enabled
+  2. OAuth 2.0 credentials (Client ID and Client Secret) of type "Desktop app"
+  3. A Google account with access to the target GA4 property
 
-Uso:
-  python scripts/get_refresh_token.py
+Usage:
+  uv run python scripts/get_refresh_token.py
 """
 
-import os
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -20,7 +19,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 try:
     import httpx
 except ImportError:
-    print("❌ httpx não instalado. Execute: uv sync")
+    print("❌ httpx is not installed. Run: uv sync")
     sys.exit(1)
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -28,7 +27,7 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 REDIRECT_URI = "http://localhost:8080/callback"
 SCOPES = ["https://www.googleapis.com/auth/analytics.readonly"]
 
-# Variável global para capturar o code do callback
+# Global to capture the code from the callback
 _auth_code: str | None = None
 
 
@@ -44,59 +43,58 @@ class CallbackHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(
-                b"<h2>Autorizacao concluida!</h2>"
-                b"<p>Pode fechar esta aba e voltar ao terminal.</p>"
+                b"<h2>Authorization complete.</h2>"
+                b"<p>You can close this tab and return to the terminal.</p>"
             )
         else:
-            error = params.get("error", ["desconhecido"])[0]
+            error = params.get("error", ["unknown"])[0]
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(f"Erro: {error}".encode())
+            self.wfile.write(f"Error: {error}".encode())
 
-    def log_message(self, *args):  # silencia logs do servidor
+    def log_message(self, *args):  # silence server logs
         pass
 
 
 def main():
     print("=" * 60)
-    print("  Google Analytics OAuth2 — Geração de Refresh Token")
+    print("  Google Analytics OAuth2 — Refresh Token Generator")
     print("=" * 60)
     print()
 
-    client_id = input("Client ID (do Google Cloud Console): ").strip()
+    client_id = input("Client ID (from Google Cloud Console): ").strip()
     client_secret = input("Client Secret: ").strip()
 
     if not client_id or not client_secret:
-        print("❌ Client ID e Client Secret são obrigatórios.")
+        print("❌ Client ID and Client Secret are required.")
         sys.exit(1)
 
-    # Monta a URL de autorização
     auth_params = {
         "client_id": client_id,
         "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
-        "prompt": "consent",  # garante que o refresh_token seja retornado
+        "prompt": "consent",  # ensure a refresh_token is returned
     }
     auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(auth_params)}"
 
-    print(f"\n🌐 Abrindo navegador para autenticação...")
-    print(f"   Se não abrir automaticamente, acesse:\n   {auth_url}\n")
+    print("\n🌐 Opening browser for authentication...")
+    print(f"   If it doesn't open automatically, visit:\n   {auth_url}\n")
     webbrowser.open(auth_url)
 
-    # Sobe servidor temporário na porta 8080 para capturar o callback
-    print("⏳ Aguardando callback em http://localhost:8080/callback ...")
+    # Temporary local server on port 8080 to capture the callback
+    print("⏳ Waiting for callback at http://localhost:8080/callback ...")
     server = HTTPServer(("localhost", 8080), CallbackHandler)
-    server.handle_request()  # processa apenas uma requisição
+    server.handle_request()  # process a single request
 
     if not _auth_code:
-        print("❌ Não foi possível capturar o código de autorização.")
+        print("❌ Could not capture the authorization code.")
         sys.exit(1)
 
-    print("✅ Código de autorização recebido.")
+    print("✅ Authorization code received.")
 
-    # Troca o code pelo refresh_token
+    # Exchange the code for a refresh_token
     response = httpx.post(
         GOOGLE_TOKEN_URL,
         data={
@@ -112,20 +110,20 @@ def main():
 
     refresh_token = tokens.get("refresh_token")
     if not refresh_token:
-        print("❌ Refresh token não retornado. Verifique se 'prompt=consent' está na URL.")
-        print(f"   Resposta: {tokens}")
+        print("❌ Refresh token was not returned. Check that 'prompt=consent' is in the URL.")
+        print(f"   Response: {tokens}")
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("  ✅ Refresh Token obtido com sucesso!")
+    print("  ✅ Refresh Token obtained successfully!")
     print("=" * 60)
-    print(f"\nAdicione ao seu .env:\n")
+    print("\nAdd the following to your .env:\n")
     print(f"GOOGLE_ANALYTICS_CLIENT_ID={client_id}")
     print(f"GOOGLE_ANALYTICS_CLIENT_SECRET={client_secret}")
     print(f"GOOGLE_ANALYTICS_REFRESH_TOKEN={refresh_token}")
     print()
-    print("⚠️  Guarde o refresh token com segurança — ele não expira")
-    print("   (a menos que seja revogado manualmente).")
+    print("⚠️  Keep the refresh token secure — it does not expire")
+    print("   (unless manually revoked).")
 
 
 if __name__ == "__main__":

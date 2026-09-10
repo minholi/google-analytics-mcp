@@ -1,12 +1,12 @@
 """
-Cliente para a Google Analytics 4 Data API.
-Usa httpx diretamente (sem SDK oficial) para controle total e dependências mínimas.
+Google Analytics 4 Data API client.
+Uses httpx directly (no official SDK) for full control and minimal dependencies.
 
 API: https://analyticsdata.googleapis.com/v1beta
 Docs: https://developers.google.com/analytics/devguides/reporting/data/v1
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -20,6 +20,7 @@ DEFAULT_TIMEOUT = 30.0
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _safe_div(a: float, b: float, default: float = 0.0) -> float:
     return a / b if b else default
@@ -40,20 +41,21 @@ def _parse_int(value: Any, default: int = 0) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Cliente principal
+# Main client
 # ---------------------------------------------------------------------------
+
 
 class GoogleAnalyticsClient:
     def __init__(self, auth: GoogleAnalyticsAuth, property_id: str):
         self.auth = auth
-        # Normaliza: remove prefixo "properties/" se o usuário incluiu
+        # Normalize: strip the "properties/" prefix if the user included it
         self.property_id = property_id.replace("properties/", "").strip()
         self._property_resource = f"properties/{self.property_id}"
 
-    # ── Chamadas de baixo nível ──────────────────────────────────────────────
+    # ── Low-level calls ─────────────────────────────────────────────────────
 
     def _post_report(self, body: dict) -> dict:
-        """POST para :runReport. Retry automático em 401 (renovação de token)."""
+        """POST to :runReport. Automatic retry on 401 (token refresh)."""
         url = f"{GA4_BASE_URL}/{self._property_resource}:runReport"
         for attempt in range(2):
             headers = self.auth.build_headers()
@@ -67,7 +69,7 @@ class GoogleAnalyticsClient:
         return {}
 
     def _post_realtime(self, body: dict) -> dict:
-        """POST para :runRealtimeReport. Retry automático em 401."""
+        """POST to :runRealtimeReport. Automatic retry on 401."""
         url = f"{GA4_BASE_URL}/{self._property_resource}:runRealtimeReport"
         for attempt in range(2):
             headers = self.auth.build_headers()
@@ -86,13 +88,12 @@ class GoogleAnalyticsClient:
         dimension_names: list[str],
         metric_names: list[str],
     ) -> list[dict]:
-        """
-        Converte linhas da resposta GA4 em dicts planos.
+        """Converts GA4 response rows into flat dicts.
 
-        GA4 retorna dimensões e métricas por posição (não por nome):
+        GA4 returns dimensions and metrics by position (not by name):
           {"dimensionValues": [{"value": "/home"}], "metricValues": [{"value": "12345"}]}
 
-        Retorna: [{"pagePath": "/home", "screenPageViews": 12345, ...}]
+        Returns: [{"pagePath": "/home", "screenPageViews": 12345, ...}]
         """
         rows = raw.get("rows", [])
         result = []
@@ -107,7 +108,7 @@ class GoogleAnalyticsClient:
             result.append(entry)
         return result
 
-    # ── Métodos de dados ──────────────────────────────────────────────────────
+    # ── Data methods ────────────────────────────────────────────────────────
 
     def get_overview(
         self,
@@ -115,16 +116,23 @@ class GoogleAnalyticsClient:
         end_date: str,
         compare_previous: bool = False,
     ) -> dict:
-        """KPIs principais da propriedade. Opcionalmente compara com período anterior."""
+        """Main KPIs for the property. Optionally compares with the previous period."""
         metrics = [
-            "sessions", "activeUsers", "newUsers", "screenPageViews",
-            "bounceRate", "averageSessionDuration", "engagementRate", "conversions",
+            "sessions",
+            "activeUsers",
+            "newUsers",
+            "screenPageViews",
+            "bounceRate",
+            "averageSessionDuration",
+            "engagementRate",
+            "conversions",
         ]
         date_ranges = [{"startDate": start_date, "endDate": end_date}]
 
         prev_start = prev_end = None
         if compare_previous:
             from datetime import date, timedelta
+
             s = date.fromisoformat(start_date)
             e = date.fromisoformat(end_date)
             delta = (e - s).days + 1
@@ -138,7 +146,7 @@ class GoogleAnalyticsClient:
             "dateRanges": date_ranges,
             "metrics": [{"name": m} for m in metrics],
         }
-        # Com múltiplos dateRanges, GA4 adiciona dimensão implícita "dateRange"
+        # With multiple dateRanges, GA4 adds an implicit "dateRange" dimension
         if compare_previous:
             body["dimensions"] = [{"name": "dateRange"}]
 
@@ -160,7 +168,7 @@ class GoogleAnalyticsClient:
                 "period": {"start": start_date, "end": end_date},
             }
         else:
-            # Sem breakdown de período — GA4 retorna totais numa única linha
+            # No period breakdown — GA4 returns totals in a single row
             rows = raw.get("rows", [])
             raw_metrics: dict[str, Any] = {}
             if rows:
@@ -180,8 +188,15 @@ class GoogleAnalyticsClient:
         group_by: str = "channel",
         limit: int = 25,
     ) -> dict:
-        """Aquisição de tráfego agrupada por canal, source/medium ou campanha."""
-        metrics = ["sessions", "activeUsers", "newUsers", "bounceRate", "engagementRate", "conversions"]
+        """Traffic acquisition grouped by channel, source/medium or campaign."""
+        metrics = [
+            "sessions",
+            "activeUsers",
+            "newUsers",
+            "bounceRate",
+            "engagementRate",
+            "conversions",
+        ]
 
         if group_by == "source_medium":
             dimensions = ["sessionSource", "sessionMedium"]
@@ -235,13 +250,17 @@ class GoogleAnalyticsClient:
         start_date: str,
         end_date: str,
         limit: int = 25,
-        page_path_filter: Optional[str] = None,
+        page_path_filter: str | None = None,
     ) -> dict:
-        """Top páginas por pageviews, com bounce rate e duração média."""
+        """Top pages by pageviews, with bounce rate and average duration."""
         dimensions = ["pagePath", "pageTitle"]
         metrics = [
-            "screenPageViews", "sessions", "activeUsers",
-            "averageSessionDuration", "bounceRate", "engagementRate",
+            "screenPageViews",
+            "sessions",
+            "activeUsers",
+            "averageSessionDuration",
+            "bounceRate",
+            "engagementRate",
         ]
 
         body: dict[str, Any] = {
@@ -268,16 +287,18 @@ class GoogleAnalyticsClient:
 
         pages = []
         for row in rows:
-            pages.append({
-                "path": row.get("pagePath", ""),
-                "title": row.get("pageTitle", ""),
-                "pageviews": _parse_int(row.get("screenPageViews")),
-                "sessions": _parse_int(row.get("sessions")),
-                "active_users": _parse_int(row.get("activeUsers")),
-                "avg_session_duration": _parse_float(row.get("averageSessionDuration")),
-                "bounce_rate": _parse_float(row.get("bounceRate")),
-                "engagement_rate": _parse_float(row.get("engagementRate")),
-            })
+            pages.append(
+                {
+                    "path": row.get("pagePath", ""),
+                    "title": row.get("pageTitle", ""),
+                    "pageviews": _parse_int(row.get("screenPageViews")),
+                    "sessions": _parse_int(row.get("sessions")),
+                    "active_users": _parse_int(row.get("activeUsers")),
+                    "avg_session_duration": _parse_float(row.get("averageSessionDuration")),
+                    "bounce_rate": _parse_float(row.get("bounceRate")),
+                    "engagement_rate": _parse_float(row.get("engagementRate")),
+                }
+            )
 
         return {
             "pages": pages,
@@ -293,7 +314,7 @@ class GoogleAnalyticsClient:
         granularity: str = "country",
         limit: int = 25,
     ) -> dict:
-        """Performance por país, região ou cidade."""
+        """Performance by country, region or city."""
         dim_map = {"country": "country", "region": "region", "city": "city"}
         dimension = dim_map.get(granularity, "country")
         metrics = ["sessions", "activeUsers", "newUsers", "conversions", "bounceRate"]
@@ -310,14 +331,16 @@ class GoogleAnalyticsClient:
 
         locations = []
         for row in rows:
-            locations.append({
-                "name": row.get(dimension, ""),
-                "sessions": _parse_int(row.get("sessions")),
-                "active_users": _parse_int(row.get("activeUsers")),
-                "new_users": _parse_int(row.get("newUsers")),
-                "conversions": _parse_float(row.get("conversions")),
-                "bounce_rate": _parse_float(row.get("bounceRate")),
-            })
+            locations.append(
+                {
+                    "name": row.get(dimension, ""),
+                    "sessions": _parse_int(row.get("sessions")),
+                    "active_users": _parse_int(row.get("activeUsers")),
+                    "new_users": _parse_int(row.get("newUsers")),
+                    "conversions": _parse_float(row.get("conversions")),
+                    "bounce_rate": _parse_float(row.get("bounceRate")),
+                }
+            )
 
         return {
             "locations": locations,
@@ -333,7 +356,7 @@ class GoogleAnalyticsClient:
         breakdown: str = "deviceCategory",
         limit: int = 25,
     ) -> dict:
-        """Audiência por dispositivo, browser ou sistema operacional."""
+        """Audience by device, browser or operating system."""
         valid_breakdowns = {"deviceCategory", "browser", "operatingSystem"}
         dimension = breakdown if breakdown in valid_breakdowns else "deviceCategory"
         metrics = ["sessions", "activeUsers", "screenPageViews", "bounceRate", "engagementRate"]
@@ -350,14 +373,16 @@ class GoogleAnalyticsClient:
 
         result = []
         for row in rows:
-            result.append({
-                "name": row.get(dimension, ""),
-                "sessions": _parse_int(row.get("sessions")),
-                "active_users": _parse_int(row.get("activeUsers")),
-                "pageviews": _parse_int(row.get("screenPageViews")),
-                "bounce_rate": _parse_float(row.get("bounceRate")),
-                "engagement_rate": _parse_float(row.get("engagementRate")),
-            })
+            result.append(
+                {
+                    "name": row.get(dimension, ""),
+                    "sessions": _parse_int(row.get("sessions")),
+                    "active_users": _parse_int(row.get("activeUsers")),
+                    "pageviews": _parse_int(row.get("screenPageViews")),
+                    "bounce_rate": _parse_float(row.get("bounceRate")),
+                    "engagement_rate": _parse_float(row.get("engagementRate")),
+                }
+            )
 
         return {
             "rows": result,
@@ -370,10 +395,10 @@ class GoogleAnalyticsClient:
         self,
         start_date: str,
         end_date: str,
-        event_names: Optional[list[str]] = None,
+        event_names: list[str] | None = None,
         limit: int = 50,
     ) -> dict:
-        """Top eventos por contagem, com opção de filtrar por nomes específicos."""
+        """Top events by count, optionally filtered to specific event names."""
         dimensions = ["eventName"]
         metrics = ["eventCount", "eventCountPerUser", "totalUsers"]
 
@@ -398,12 +423,14 @@ class GoogleAnalyticsClient:
 
         events = []
         for row in rows:
-            events.append({
-                "name": row.get("eventName", ""),
-                "count": _parse_int(row.get("eventCount")),
-                "count_per_user": _parse_float(row.get("eventCountPerUser")),
-                "total_users": _parse_int(row.get("totalUsers")),
-            })
+            events.append(
+                {
+                    "name": row.get("eventName", ""),
+                    "count": _parse_int(row.get("eventCount")),
+                    "count_per_user": _parse_float(row.get("eventCountPerUser")),
+                    "total_users": _parse_int(row.get("totalUsers")),
+                }
+            )
 
         return {
             "events": events,
@@ -418,7 +445,7 @@ class GoogleAnalyticsClient:
         end_date: str,
         limit: int = 50,
     ) -> dict:
-        """Eventos de conversão com receita, por canal e nome do evento."""
+        """Conversion events with revenue, by channel and event name."""
         dimensions = ["sessionDefaultChannelGroup", "eventName"]
         metrics = ["conversions", "totalRevenue", "sessions"]
 
@@ -449,13 +476,15 @@ class GoogleAnalyticsClient:
             rev = _parse_float(row.get("totalRevenue"))
             total_conv += conv
             total_revenue += rev
-            conversions.append({
-                "channel": row.get("sessionDefaultChannelGroup", ""),
-                "event_name": row.get("eventName", ""),
-                "conversions": conv,
-                "revenue": rev,
-                "sessions": _parse_int(row.get("sessions")),
-            })
+            conversions.append(
+                {
+                    "channel": row.get("sessionDefaultChannelGroup", ""),
+                    "event_name": row.get("eventName", ""),
+                    "conversions": conv,
+                    "revenue": rev,
+                    "sessions": _parse_int(row.get("sessions")),
+                }
+            )
 
         return {
             "conversions": conversions,
@@ -465,23 +494,27 @@ class GoogleAnalyticsClient:
         }
 
     def get_realtime(self) -> dict:
-        """Usuários ativos no momento, por página, fonte, país e dispositivo."""
-        # 1. Total de usuários ativos
-        total_raw = self._post_realtime({
-            "metrics": [{"name": "activeUsers"}],
-        })
+        """Active users right now, by page, source, country and device."""
+        # 1. Total active users
+        total_raw = self._post_realtime(
+            {
+                "metrics": [{"name": "activeUsers"}],
+            }
+        )
         active_users = 0
         total_rows = total_raw.get("rows", [])
         if total_rows:
             active_users = _parse_int(total_rows[0]["metricValues"][0]["value"])
 
-        # 2. Por página
-        pages_raw = self._post_realtime({
-            "dimensions": [{"name": "unifiedPagePathScreen"}],
-            "metrics": [{"name": "activeUsers"}],
-            "limit": 10,
-            "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
-        })
+        # 2. By page
+        pages_raw = self._post_realtime(
+            {
+                "dimensions": [{"name": "unifiedPagePathScreen"}],
+                "metrics": [{"name": "activeUsers"}],
+                "limit": 10,
+                "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
+            }
+        )
         by_page = [
             {
                 "page": row["dimensionValues"][0]["value"],
@@ -490,13 +523,15 @@ class GoogleAnalyticsClient:
             for row in pages_raw.get("rows", [])
         ]
 
-        # 3. Por fonte
-        sources_raw = self._post_realtime({
-            "dimensions": [{"name": "firstUserSource"}],
-            "metrics": [{"name": "activeUsers"}],
-            "limit": 10,
-            "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
-        })
+        # 3. By source
+        sources_raw = self._post_realtime(
+            {
+                "dimensions": [{"name": "firstUserSource"}],
+                "metrics": [{"name": "activeUsers"}],
+                "limit": 10,
+                "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
+            }
+        )
         by_source = [
             {
                 "source": row["dimensionValues"][0]["value"],
@@ -505,13 +540,15 @@ class GoogleAnalyticsClient:
             for row in sources_raw.get("rows", [])
         ]
 
-        # 4. Por país
-        countries_raw = self._post_realtime({
-            "dimensions": [{"name": "country"}],
-            "metrics": [{"name": "activeUsers"}],
-            "limit": 10,
-            "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
-        })
+        # 4. By country
+        countries_raw = self._post_realtime(
+            {
+                "dimensions": [{"name": "country"}],
+                "metrics": [{"name": "activeUsers"}],
+                "limit": 10,
+                "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
+            }
+        )
         by_country = [
             {
                 "country": row["dimensionValues"][0]["value"],
@@ -520,13 +557,15 @@ class GoogleAnalyticsClient:
             for row in countries_raw.get("rows", [])
         ]
 
-        # 5. Por dispositivo
-        devices_raw = self._post_realtime({
-            "dimensions": [{"name": "deviceCategory"}],
-            "metrics": [{"name": "activeUsers"}],
-            "limit": 10,
-            "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
-        })
+        # 5. By device
+        devices_raw = self._post_realtime(
+            {
+                "dimensions": [{"name": "deviceCategory"}],
+                "metrics": [{"name": "activeUsers"}],
+                "limit": 10,
+                "orderBys": [{"metric": {"metricName": "activeUsers"}, "desc": True}],
+            }
+        )
         by_device = [
             {
                 "device": row["dimensionValues"][0]["value"],
@@ -545,13 +584,19 @@ class GoogleAnalyticsClient:
 
 
 # ---------------------------------------------------------------------------
-# Helper interno para cast de métricas do overview
+# Internal helper for overview metric casting
 # ---------------------------------------------------------------------------
 
+
 def _cast_overview(raw: dict[str, Any], metrics: list[str]) -> dict[str, Any]:
-    """Converte strings de métricas do overview para tipos numéricos."""
+    """Cast overview metric strings to numeric types."""
     int_metrics = {"sessions", "activeUsers", "newUsers", "screenPageViews"}
-    float_metrics = {"bounceRate", "averageSessionDuration", "engagementRate", "conversions"}
+    float_metrics = {  # noqa: F841 (documentation of intent)
+        "bounceRate",
+        "averageSessionDuration",
+        "engagementRate",
+        "conversions",
+    }
     result: dict[str, Any] = {}
     for m in metrics:
         val = raw.get(m, "0")

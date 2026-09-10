@@ -1,11 +1,26 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
+# Credentials — NEVER commit
 .env
+*.key
+*.pem
+
+# OAuth provider storage (encrypted refresh_tokens live here)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+wheels/
+.venv/
+venv/
+
+# Cache / temporaries
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+/tmp/
+
+# Editor / tooling local state
+.claude/

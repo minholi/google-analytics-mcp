@@ -1,37 +1,38 @@
 services:
 
   # ── MCP Server ────────────────────────────────────────────────
+  # The host's Caddy terminates TLS and reverse-proxies to 127.0.0.1:8000.
   google-analytics-mcp:
     build: .
-    image: google-analytics-mcp:latest
-    container_name: google-analytics-mcp
     restart: unless-stopped
+    # HOST_UID/HOST_GID come from .env (UID/GID are read-only in bash and do
+    # not propagate through export). Without an override, this falls back to
+    # 1000:1000 (the `mcp` user from the Dockerfile).
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     env_file: .env
     environment:
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8000"
-    # Porta exposta apenas internamente — o Caddy faz o proxy
-    expose:
-      - "8000"
+      # Directory where GoogleProvider writes DCR clients and encrypted refresh_tokens.
+      # Persisted via the ./data volume below so it survives container restarts.
+      FASTMCP_HOME: /app/data
+    ports:
+      # Host port is parameterizable (MCP_HOST_PORT in .env) so multiple
+      # checkouts (prod/staging) can run on the same machine without conflict.
+      - "127.0.0.1:${MCP_HOST_PORT:-8000}:8000"
     healthcheck:
+      # Public endpoint (no auth) — always 200 while the server is up.
       test: ["CMD", "python", "-c",
-             "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+             "import httpx; httpx.get('http://localhost:8000/.well-known/oauth-authorization-server').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    networks:
-      - mcp-network
+    volumes:
+      - ./data:/app/data
     deploy:
       resources:
         limits:
           memory: 256M
           cpus: "0.5"
-
-networks:
-  # Rede externa compartilhada com google_ads_mcp e facebook_ads_mcp.
-  # Crie uma vez no servidor: docker network create mcp-network
-  # O Caddy já roda no google_ads_mcp — basta adicionar este serviço à rede.
-  mcp-network:
-    external: true
